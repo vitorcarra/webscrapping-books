@@ -10,4 +10,17 @@ The output format can be both csv or json.
 
 - python3
 - beautifulsoup4
+- requests
 
+Why requests lib? The site used has no javascript code. So requests will be enough.
+
+## Deploy
+
+```
+git clone git@github.com:vitorcarra/webscrapping-books.git
+cd webscrapping-books
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+```
