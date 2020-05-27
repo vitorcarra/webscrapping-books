@@ -74,8 +74,8 @@ class BookStore:
                                     .find('strong').text
                          ) #  first form shows the total books
 
-        print("Total books to process: {}".format(str(total_books)))
-        print("Items per page: {}".format(str(self.items_per_page)))
+        #print("Total books to process: {}".format(str(total_books)))
+        #print("Items per page: {}".format(str(self.items_per_page)))
 
         if total_books <= 20:
                 total_pages = 1
@@ -85,8 +85,8 @@ class BookStore:
                 total_pages += 1
         
         pages_urls = [self.base_url + 'catalogue/category/books_1/page-{}.html'.format(str(page_num))
-                                            #for page_num in range(total_pages + 1)]
-                                            for page_num in range(3)]
+                                            for page_num in range(total_pages + 1)]
+                                            
 
         all_books = []
         for page in pages_urls:
