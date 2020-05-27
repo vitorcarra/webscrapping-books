@@ -2,6 +2,9 @@ from requests import get
 from bs4 import BeautifulSoup as bs
 from collections import namedtuple
 import sys
+import csv
+import argparse
+import json
 
 class BookStore:
 
@@ -24,64 +27,42 @@ class BookStore:
         return books_store_page
 
     def _get_page(self, url:str):
-        page_source = get(url=url)
+        page_source = get(url=url, timeout=60)
+        page_source.encoding = 'utf-8'
         return bs(page_source.text, 'html.parser')
         
-    def _gen_books(self, books_urls, category):
+    def _get_book_details(self, url:str):
         book = namedtuple('Book', 'name category price rating available')
 
-        for url in books_urls:
-            book_url = f'{self.base_url}url'
-            book_content = self._get_page(book_url)
-            name = ''
-            price = ''
-            rating = ''
-            available = 0
-            yield book(name, category, price, rating, available)
-
-        """
-            books_list = books_catalog.find('section').find_all('li', {'class': 'col-xs-6 col-sm-4 col-md-3 col-lg-3'})
-
-            for book in books_list 
-
-            ### name, price, rating, availability
-        """
-
-    def _gen_books_category(self, url):
+        book_url = self.base_url + 'catalogue/' + url
         try:
-            page_index = self._get_page(url)
-            total_books = int(page_index.find('form', {'class': 'form-horizontal'})
-                                        .find('strong').text
-                            ) #  first form shows the total books
-            category_name = url.split('/')[6].split('_')[0] #  category name is at 6th position in the URL
-            
-            if total_books <= 20:
-                total_pages = 1
-            else:
-                total_pages = total_books // 20 # we need to divide by 20 (max books in a page)
-                if total_books % 20 > 0: #  we check if is there a last page with less then 20
-                    total_pages += 1
+            book_content = self._get_page(book_url)
+            product_data = book_content.find('div', {'class': 'product_main'})
+            name = product_data.find('h1').text
+            price = product_data.find('p', {'class': 'price_color'}).text
+            rating = product_data.find('p', {'class': 'star-rating'}).attrs.get('class')[1] # number of stars is in the class
+            available = product_data.find('p', {'class': 'instock availability'}).text.strip()
+            in_stock = available[available.index('(')+1:available.index('available')-1]
+            category = book_content.find('ul', {'class': 'breadcrumb'}).find_all('li')[2].text.strip()
 
+            return book(name, category, price, rating, in_stock)
+        except Exception as e:
+            print(e)
+            return None
+
+    def _gen_books(self, url:str):
+        book = namedtuple('Book', 'name category price rating available')
+
+        try:    
             books_links = []
-            for page_number in range(1,total_pages+1):
-                print("{} - page {}".format(category_name, str(page_number)))
-                if page_number > 1:
-                    page_url = url.replace('index', 'page-' + str(page_number))
-                else:
-                    page_url = url
-                print(page_url)
-                page_content = self._get_page(page_url)
-                product_boxes = page_content.find_all('article',{'class': 'product_pod'})
-            
-                for book_link in product_boxes:
-                    books_links.append(book_link.find('a').get('href').replace('../',''))
+            page_content = self._get_page(url)
+            product_boxes = page_content.find_all('article',{'class': 'product_pod'})
+        
+            for book_link in product_boxes:
+                books_links.append(book_link.find('a').get('href').replace('../',''))
 
-                #_gen_books(books_links, category_name)
-                print('Category: {}'.format(category_name))
-                print('books_links: {}'.format(books_links))
-                    
+            return map(self._get_book_details, books_links)
 
-            return True
         except Exception as e:
             print("Error: {}".format(e))
             return False
@@ -94,20 +75,63 @@ class BookStore:
                          ) #  first form shows the total books
 
         print("Total books to process: {}".format(str(total_books)))
-        #print("Items per page: {}".format(str(self.items_per_page)))
+        print("Items per page: {}".format(str(self.items_per_page)))
 
-        books_categories = [self.base_url + link.get('href') for link in first_page.find('div', {'class' : 'side_categories'}).find('ul', {'class': 'nav nav-list'}).find('ul').find_all('a')]
+        if total_books <= 20:
+                total_pages = 1
+        else:
+            total_pages = total_books // 20 # we need to divide by 20 (max books in a page)
+            if total_books % 20 > 0: #  we check if is there a last page with less then 20
+                total_pages += 1
+        
+        pages_urls = [self.base_url + 'catalogue/category/books_1/page-{}.html'.format(str(page_num))
+                                            #for page_num in range(total_pages + 1)]
+                                            for page_num in range(3)]
+
+        all_books = []
+        for page in pages_urls:
+            all_books += self._gen_books(page)
+        
+        return all_books
+        
+
+        #books_categories = [self.base_url + link.get('href') for link in first_page.find('div', {'class' : 'side_categories'}).find('ul', {'class': 'nav nav-list'}).find('ul').find_all('a')]
         #print(books_categories)
-
-        for category in books_categories:
-            all_books = self._gen_books_category(category)
 
 
 if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--format', help='Output format (json/csv)', required=True)
+    parser.add_argument('-o', '--output', help='Output file', required=True)
+    args = parser.parse_args()
+    
     base_url = 'http://books.toscrape.com/'
     first_page = 'index.html'  #  where we will get the total of pages to process
     items_per_page = 20 #  this the default value of this site
 
     b = BookStore(url=base_url, first_page=first_page, items_per_page=items_per_page) #  all products list
-    #b.scrap()
+    result = b.scrap()
+
+    if args.format == 'csv':
+        with open(args.output, 'w', newline='', encoding='utf8') as f:
+            csv_wr = csv.writer(f, quoting=csv.QUOTE_ALL)
+            csv_wr.writerow(['name', 'category', 'price', 'rating', 'available'])
+            for row in result:
+                csv_wr.writerow(list(row))
+    
+    if args.format == 'json':
+        json_output = {}
+        json_output['data'] = []
+        with open(args.output, 'w', newline='', encoding='utf8') as f:
+            for row in result:
+                json_output['data'].append({
+                    'name': row.name,
+                    'category': row.category,
+                    'price': row.price,
+                    'rating': row.rating,
+                    'available': row.available
+                })
+
+            json.dump(json_output, f, ensure_ascii=False)
     
